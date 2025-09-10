@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nebula Command Center — Demo NASA</title>
+  <meta name="description" content="Centre de commandement spatial — interface interactive, carte stellaire, timeline des missions, visualisations WebGL-like (canvas), panels de données." />
+  <style>
+    /* ======================
+       Nebula Command Center
+       Complex single-file demo
+       ====================== */
+    :root{
+      --bg:#030414;
+      --card:#071026;
+      --muted:#9fb4d4;
+      --accent:#bfe9ff;
+      --accent-2:#ffd8a6;
+      --glass: rgba(255,255,255,0.03);
+      --glass-2: rgba(255,255,255,0.02);
+      --mono: 'SFMono-Regular', 'Courier New', monospace;
+      --ease: cubic-bezier(.2,.9,.3,1);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:radial-gradient(800px 400px at 20% 10%, rgba(191,233,255,0.02), transparent), var(--bg);color:var(--accent);font-family:Inter,system-ui,Arial,sans-serif}
+
+    /* layout */
+    .wrap{max-width:1300px;margin:24px auto;padding:20px;display:grid;grid-template-columns:1fr 420px;gap:22px}
+    header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:56px;height:56px;border-radius:8px;background:linear-gradient(135deg,#004bff,#00ffd1);display:grid;place-items:center;font-weight:800;color:#021124;font-family:var(--mono)}
+    .title{font-size:20px;font-weight:800;letter-spacing:0.6px}
+    .subtitle{font-size:12px;color:var(--muted)}
+
+    nav.controls{display:flex;gap:10px;align-items:center}
+    .btn{padding:8px 12px;border-radius:8px;background:linear-gradient(180deg,rgba(255, 255, 255, 0.02),transparent);border:1px solid rgba(255, 255, 255, 0.04);font-weight:700;cursor:pointer}
+    .btn.ghost{background:transparent;border:1px dashed rgba(255, 255, 255, 0.04)}
+
+    /* main panels */
+    main{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .panel{background:linear-gradient(180deg,var(--card), rgba(255,255,255,0.01));padding:14px;border-radius:12px;border:1px solid var(--glass);}
+    .panel h3{margin:0 0 10px 0}
+
+    /* starfield canvas */
+    .starfield{position:relative;height:520px;border-radius:12px;overflow:hidden}
+    canvas#stars{position:absolute;inset:0;width:100%;height:100%;display:block}
+    .hud{position:absolute;left:16px;top:16px;background:rgba(2,8,20,0.35);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);backdrop-filter:blur(4px)}
+
+    /* solar mini map */
+    .solar{display:flex;flex-direction:column;gap:10px}
+    .orbit-map{height:260px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);position:relative}
+
+    /* telemetry */
+    .telemetry{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+    .tele-item{background:rgba(255,255,255,0.02);padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.01);font-family:var(--mono);font-size:13px}
+
+    /* timeline */
+    .timeline{height:120px;overflow:auto;padding:8px;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,0.01),transparent)}
+    .timeline .event{display:flex;gap:10px;align-items:center;padding:8px;border-radius:8px;margin-bottom:8px;border:1px solid rgba(255,255,255,0.02)}
+    .timeline .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+
+    /* data tables */
+    table{width:100%;border-collapse:collapse}
+    thead th{text-align:left;color:var(--muted);font-size:12px;padding:8px}
+    tbody td{padding:10px;border-top:1px dashed rgba(255,255,255,0.02);font-family:var(--mono);font-size:13px}
+
+    /* footer */
+    footer{grid-column:1/-1;margin-top:6px;color:var(--muted);font-size:13px;text-align:center}
+
+    /* interactions */
+    .panel .controls{display:flex;gap:8px;align-items:center}
+    .toggle{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.02);padding:6px;border-radius:999px;border:1px solid rgba(255,255,255,0.03)}
+
+    /* modal */
+    .modal{position:fixed;left:0;right:0;top:0;bottom:0;display:none;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(0,0,0,0.6),transparent)}
+    .modal .card{width:min(900px,96%);}
+
+    /* responsive */
+    @media (max-width:1100px){.wrap{grid-template-columns:1fr;}.starfield{height:420px}.main{grid-template-columns:1fr}}
+
+    /* small visual sprinkles */
+    .badge{padding:6px 8px;border-radius:8px;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#021124;font-weight:700;font-size:12px}
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo">☾</div>
+        <div>
+          <div class="title">Nebula Command Center</div>
+          <div class="subtitle">Interactive Mission UI — demo scientifique & visual</div>
+        </div>
+      </div>
+
+      <nav class="controls">
+        <button class="btn" id="btnLaunch">Simulate Launch</button>
+        <button class="btn ghost" id="btnPause">Pause</button>
+        <div class="toggle" title="Affiche/masque la grille stellaire">
+          <input type="checkbox" id="chkGrid" /> <label for="chkGrid">Star Grid</label>
+        </div>
+        <button class="btn" id="btnOpenLog">Open Logs</button>
+      </nav>
+    </header>
+
+    <aside class="panel starfield">
+      <canvas id="stars"></canvas>
+      <div class="hud">
+        <div style="font-weight:800">Mission: <span id="missionName">Artemis Demo</span></div>
+        <div style="font-size:12px;color:var(--muted)">ETA: <span id="eta">00:12:34</span></div>
+      </div>
+      <div style="position:absolute;right:16px;bottom:16px;background:rgba(2,8,20,0.5);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)">
+        <div style="font-size:12px;color:var(--muted)">Status</div>
+        <div style="font-weight:800;color:var(--accent-2)" id="statusLabel">READY</div>
+      </div>
+    </aside>
+
+    <main>
+      <section class="panel solar">
+        <h3>Solar Overview</h3>
+        <div class="orbit-map" id="orbitMap">
+          <canvas id="solarCanvas" width="400" height="260" style="max-width:100%;height:auto;border-radius:8px"></canvas>
+        </div>
+
+        <div class="telemetry" style="margin-top:6px">
+          <div class="tele-item">Velocity<br><strong id="vel">7.8 km/s</strong></div>
+          <div class="tele-item">Altitude<br><strong id="alt">120 km</strong></div>
+          <div class="tele-item">Fuel<br><strong id="fuel">98%</strong></div>
+          <div class="tele-item">Power<br><strong id="power">Nominal</strong></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3>Missions Timeline</h3>
+        <div class="timeline" id="timeline"></div>
+
+        <h4 style="margin-top:10px">Recent Telemetry</h4>
+        <table>
+          <thead><tr><th>Time</th><th>Metric</th><th>Value</th></tr></thead>
+          <tbody id="telemetryTable">
+            <!-- rows from JS -->
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <div class="panel" style="grid-column:2;">
+      <h3>Control Panel</h3>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <div class="badge" id="missionBadge">ACTIVE</div>
+        <div style="font-size:13px;color:var(--muted)">Mission Mode</div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <label style="font-size:13px;color:var(--muted)">Select Mission</label>
+        <select id="missionSelect" style="width:100%;padding:8px;margin-top:6px;border-radius:8px;background:transparent;border:1px solid rgba(255, 255, 255, 0.04);color:var(--accent)">
+          <option value="Artemis Demo">Artemis Demo</option>
+          <option value="Lunar Supply">Lunar Supply</option>
+          <option value="Deep Survey">Deep Survey</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <label style="font-size:13px;color:var(--muted)">Telemetry Filters</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="btn" id="btnFilterVel">Velocity</button>
+          <button class="btn" id="btnFilterAlt">Altitude</button>
+        </div>
+      </div>
+
+      <div>
+        <label style="font-size:13px;color:var(--muted)">Live Logs</label>
+        <div id="logs" style="height:180px;margin-top:6px;overflow:auto;background:rgba(0,0,0,0.25);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.02);font-family:var(--mono);font-size:12px;color:var(--muted)"></div>
+      </div>
+
+    </div>
+
+    <footer>© Snyzz - Nebula Command Center — Demo UI • Not affiliated with any space agency</footer>
+  </div>
+
+  <!-- Modal for logs/details -->
+  <div class="modal" id="modal">
+    <div class="card panel">
+      <h3>Log Details</h3>
+      <div id="modalContent" style="font-family:var(--mono);font-size:13px;color:var(--muted)"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn" id="closeModal">Close</button></div>
+    </div>
+  </div>
+
+  <script>
+    /* ==========================
+       Nebula Command Center JS
+       - starfield canvas
+       - solar system mini-map
+       - mission simulation, logs, timeline
+       ========================== */
+
+    // ---------- Utilities ----------
+    const $ = (s) => document.querySelector(s);
+    const el = (id) => document.getElementById(id);
+
+    // ---------- Starfield ----------
+    const canvas = el('stars');
+    const ctx = canvas.getContext('2d');
+    let W=0,H=0,stars=[];
+
+    function resize(){
+      W = canvas.width = canvas.clientWidth;
+      H = canvas.height = canvas.clientHeight;
+    }
+    window.addEventListener('resize', resize);
+
+    function initStars(n=320){
+      stars = [];
+      for(let i=0;i<n;i++){
+        stars.push({x:Math.random()*W,y:Math.random()*H,z:Math.random()*1,width:Math.random()*1.4+0.2,alpha:Math.random()*0.85});
+      }
+    }
+
+    function drawStars(t){
+      ctx.clearRect(0,0,W,H);
+      // subtle gradient vignette
+      const g = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H));
+      g.addColorStop(0,'rgba(2,6,18,0)');
+      g.addColorStop(1,'rgba(0,0,0,0.45)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,W,H);
+
+      for(let s of stars){
+        s.z += 0.0006*t; // slow parallax
+        if(s.z>1.0){ s.z = 0.001; s.x=Math.random()*W; s.y=Math.random()*H; }
+        const k = 1 / (1 - s.z);
+        const x = (s.x - W/2)*k + W/2;
+        const y = (s.y - H/2)*k + H/2;
+        const r = s.width * k * 1.2;
+        ctx.globalAlpha = s.alpha;
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(191,233,255,0.9)';
+        ctx.arc(x,y,r,0,Math.PI*2);
+        ctx.fill();
+      }
+
+      // overlay subtle grid if checked
+      if(el('chkGrid').checked){
+        ctx.globalAlpha=0.06;ctx.strokeStyle='white';ctx.lineWidth=1;
+        const gap=60;for(let gx=0;gx<W;gx+=gap){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,H);ctx.stroke();}
+        for(let gy=0;gy<H;gy+=gap){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();}
+      }
+    }
+
+    // ---------- Solar Mini-map (orbits) ----------
+    const sCanvas = el('solarCanvas');
+    const sCtx = sCanvas.getContext('2d');
+
+    function drawSolar(){
+      const w = sCanvas.width = sCanvas.clientWidth;
+      const h = sCanvas.height = sCanvas.clientHeight;
+      sCtx.clearRect(0,0,w,h);
+      const cx = w/2, cy = h/2;
+      // sun
+      const sunRadius = 18;
+      const grad = sCtx.createRadialGradient(cx,cy,0,cx,cy,sunRadius*3);
+      grad.addColorStop(0,'#ffdba6');grad.addColorStop(1,'rgba(255,200,120,0)');
+      sCtx.fillStyle = grad; sCtx.beginPath(); sCtx.arc(cx,cy,sunRadius,0,Math.PI*2); sCtx.fill();
+
+      // draw orbits
+      const planets = [40,70,100,140];
+      sCtx.strokeStyle='rgba(191,233,255,0.06)'; sCtx.lineWidth=1;
+      planets.forEach((r,i)=>{ sCtx.beginPath(); sCtx.ellipse(cx,cy,r,r*0.8,0,0,Math.PI*2); sCtx.stroke(); });
+
+      // draw moving craft
+      const t = Date.now()/2000;
+      const craftR = planets[1];
+      const angle = t*1.2;
+      const x = cx + craftR * Math.cos(angle);
+      const y = cy + craftR * 0.8 * Math.sin(angle);
+      sCtx.fillStyle = '#00f7ff'; sCtx.beginPath(); sCtx.arc(x,y,6,0,Math.PI*2); sCtx.fill();
+      sCtx.fillStyle='#021124'; sCtx.fillRect(x-2,y+7,4,2);
+    }
+
+    // ---------- Mission simulation & logs ----------
+    const logs = el('logs');
+    const timeline = el('timeline');
+    const telemetryTable = el('telemetryTable');
+    let mission = {name:'Artemis Demo',eta:754,vel:7.8,alt:120,fuel:98};
+    let running=false, lastTS=Date.now();
+
+    function addLog(msg){
+      const time = new Date().toLocaleTimeString();
+      const row = document.createElement('div'); row.textContent=`[${time}] ${msg}`; logs.prepend(row);
+    }
+
+    function addTelemetry(metric,val){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${new Date().toLocaleTimeString()}</td><td>${metric}</td><td>${val}</td>`;
+      telemetryTable.prepend(tr);
+      // limit rows
+      while(telemetryTable.children.length>12) telemetryTable.removeChild(telemetryTable.lastChild);
+    }
+
+    function pushEvent(title,desc){
+      const ev = document.createElement('div'); ev.className='event';
+      ev.innerHTML = `<div class="dot"></div><div><strong>${title}</strong><div style="font-size:12px;color:var(--muted)">${desc}</div></div>`;
+      timeline.prepend(ev);
+      while(timeline.children.length>6) timeline.removeChild(timeline.lastChild);
+    }
+
+    // ---------- Controls ----------
+    el('btnLaunch').addEventListener('click', ()=>{
+      running = true; el('statusLabel').textContent='LAUNCH'; addLog('Ignition sequence start'); pushEvent('Launch', 'Ignition sequence initiated');
+    });
+    el('btnPause').addEventListener('click', ()=>{ running = false; el('statusLabel').textContent='PAUSED'; addLog('Simulation paused'); });
+    el('btnOpenLog').addEventListener('click', ()=>{ el('modal').style.display='flex'; el('modalContent').textContent = logs.textContent; });
+    el('closeModal').addEventListener('click', ()=>{ el('modal').style.display='none'; });
+
+    el('missionSelect').addEventListener('change', (e)=>{ mission.name = e.target.value; el('missionName').textContent = mission.name; addLog('Mission selected: '+mission.name); });
+
+    // telemetry filters
+    el('btnFilterVel').addEventListener('click', ()=>{ addTelemetry('Velocity', mission.vel+' km/s'); });
+    el('btnFilterAlt').addEventListener('click', ()=>{ addTelemetry('Altitude', mission.alt+' km'); });
+
+    // timeline sample events
+    pushEvent('T-00:30', 'Payload check'); pushEvent('T-00:10','Boarding complete'); pushEvent('T-00:01','Final systems go');
+
+    // ---------- animation loop ----------
+    let last = performance.now();
+    function loop(now){
+      const dt = now - last; last = now;
+      drawStars(dt);
+      drawSolar();
+
+      // if running, update mission
+      if(running){
+        const nowTS = Date.now(); const delta = (nowTS - lastTS)/1000; lastTS = nowTS; mission.eta = Math.max(0, mission.eta - delta);
+        mission.vel += 0.001*delta; mission.alt += 0.02*delta; mission.fuel = Math.max(0, mission.fuel - 0.01*delta);
+        el('eta').textContent = new Date(mission.eta*1000).toISOString().substr(11,8);
+        el('vel').textContent = mission.vel.toFixed(2)+ ' km/s'; el('alt').textContent = mission.alt.toFixed(1)+ ' km'; el('fuel').textContent = Math.round(mission.fuel)+'%';
+        addTelemetry('Auto', `v:${mission.vel.toFixed(2)} a:${mission.alt.toFixed(1)} f:${Math.round(mission.fuel)}%`);
+        addLog(`Telemetry update — v:${mission.vel.toFixed(2)} a:${mission.alt.toFixed(1)}`);
+        // mission complete
+        if(mission.eta<=0){ running=false; el('statusLabel').textContent='ORBITAL'; addLog('Achieved orbital insertion'); pushEvent('Orbit', 'Spacecraft in stable orbit'); }
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    // ---------- startup ----------
+    resize(); initStars(360); drawSolar(); requestAnimationFrame(loop);
+    addLog('Nebula Command Center initialized');
+    addTelemetry('Boot', 'Systems nominal');
+
+    // small UX: clicking log entry shows modal
+    logs.addEventListener('click', (e)=>{ el('modal').style.display='flex'; el('modalContent').textContent = e.target.textContent; });
+
+    // preserve settings
+    el('chkGrid').checked = JSON.parse(localStorage.getItem('nebula.grid')||'false');
+    el('chkGrid').addEventListener('change', ()=>{ localStorage.setItem('nebula.grid', el('chkGrid').checked); });
+
+    // friendly keyboard shortcuts
+    window.addEventListener('keydown',(e)=>{
+      if(e.key==='l') { el('btnLaunch').click(); }
+      if(e.key==='p') { el('btnPause').click(); }
+      if(e.key==='g') { el('chkGrid').checked = !el('chkGrid').checked; localStorage.setItem('nebula.grid', el('chkGrid').checked); }
+    });
+
+  </script>
+</body>
+</html>
